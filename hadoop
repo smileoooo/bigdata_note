@@ -1,0 +1,223 @@
+NameNode
+DataNode
+Secondary NameNode
+ResourceManager
+NodeManager
+WebAppProxy
+Map Reduce Job History Server
+
+
+===etc/hadoop/yarn-site.xml===
+
+yarn.resourcemanager.scheduler.class
+CapacityScheduler
+FairScheduler
+FifoScheduler
+
+
+NodeManager的监控页面
+NodeManager 能够定期检查本地磁盘的运行状况（特别是检查 nodemanager-local-dirs 和 nodemanager-log-dirs）
+属性 yarn.nodemanager.disk-health-checker.min-healthy-disks 设置的值达到错误目录数阈值后，整个节点被标记为不正常
+
+Hadoop 机架感知
+
+端口
+50070
+11004
+
+输出文件流相关
+Using the FileSystem API
+FSDataOutputStream--org.apache.hadoop.fs.StreamCapabilities
+
+客户端项目的当前列表
+Hadoop-client
+Hadoop-client-API
+Hadoop-client-minicluster
+Hadoop-client-runtime
+Hadoop-HDFS-client
+Hadoop-HDFS-native-client
+Hadoop-mapreduce-client-app
+Hadoop-mapreduce-client-common
+Hadoop-mapreduce-client-core
+Hadoop-mapreduce-client-jobclient
+Hadoop-mapreduce-client-nativetask
+Hadoop-Yarn-client
+
+
+
+HDFS中定期实现新功能和改进。以下是HDFS中有用功能的子集：
+文件权限和身份验证。
+机架感知：在调度任务和分配存储时考虑节点的物理位置。
+安全模式：用于维护的管理模式。
+fsck：用于诊断文件系统运行状况的实用程序，以查找丢失的文件或块。
+fetchdt：一个实用程序，用于获取DelegateToken并将其存储在本地系统上的文件中。
+Balancer_平衡器：当数据在数据节点之间分布不均匀时平衡集群的工具。
+Upgrade and rollback_升级和回滚：软件升级后，如果出现意外问题，可以回滚到升级前的HDFS状态。
+Secondary NameNode_辅助名称节点：执行命名空间的定期检查点，并帮助将包含 HDFS 修改日志的文件的大小保持在 NameNode 的特定限制内。
+Checkpoint node_检查点节点：执行命名空间的定期检查点，并帮助最小化存储在 NameNode 上的包含对 HDFS 更改的日志的大小。替换之前由辅助名称节点填充的角色，但尚未经过战斗强化。NameNode 允许同时使用多个检查点节点，只要没有向系统注册备份节点。
+Backup node_备份节点：检查点节点的扩展。除了检查点之外，它还从 NameNode 接收编辑流，并维护自己的命名空间内存中副本，该副本始终与活动的 NameNode 命名空间状态同步。一次只能向 NameNode 注册一个备份节点
+
+
+
+Secondary NameNode
+NameNode 将对文件系统的修改存储为附加到本机文件系统文件的日志，进行编辑。当 NameNode 启动时，它会从图像文件 fsimage 读取 HDFS 状态，然后从编辑日志editslog文件中应用编辑。然后，它将新的 HDFS 状态写入 fsimage，并使用空编辑文件开始正常操作。由于 NameNode 仅在启动期间合并 fsimage 并编辑文件，因此随着时间的推移，在繁忙的集群上，编辑日志文件可能会变得非常大。较大的编辑文件的另一个副作用是下次重新启动 NameNode 需要更长的时间。
+辅助 NameNode 会定期合并 fsimage 和editslog文件，并将编辑日志大小保持在限制范围内。它通常在与主 NameNode 不同的计算机上运行，因为它的内存要求与主 NameNode 的顺序相同
+配置项：
+dfs.namenode.checkpoint.period（默认情况下设置为 1 小时）指定两个连续检查点之间的最大延迟，并且
+dfs.namenode.checkpoint.txns（默认设置为 1 万）定义了 NameNode 上未检查点事务的数量，即使尚未达到检查点周期，这些事务也会强制紧急检查点
+
+
+Checkpoint Node
+NameNode 使用两个文件保留其命名空间：fsimage，它是命名空间的最新检查点，编辑，这是自检查点以来对命名空间所做的更改的日志（日志）。当 NameNode 启动时，它会合并 fsimage 并编辑日志以提供文件系统元数据的最新视图。然后，NameNode 用新的 HDFS 状态覆盖 fsimage，并开始新的编辑日志。
+“检查点”节点会定期创建命名空间的检查点。它从活动的 NameNode 下载 fsimage 和编辑内容，在本地合并它们，然后将新图像上传回活动的 NameNode。检查点节点通常在与 NameNode 不同的计算机上运行，因为它的内存要求与 NameNode 的顺序相同。检查点节点由配置文件中指定的节点上的 bin/hdfs namenode -checkpoint 启动
+配置项：
+dfs.namenode.checkpoint.period（默认设置为 1 小时）指定两个连续检查点之间的最大延迟
+dfs.namenode.checkpoint.txns（默认设置为 1 万）定义了 NameNode 上未检查点事务的数量，即使尚未达到检查点周期，这些事务也会强制紧急检查点。
+
+
+Backup Node
+备份节点提供与检查点节点相同的检查点功能，并维护文件系统命名空间的内存中最新副本，该副本始终与活动 NameNode 状态同步。除了接受来自 NameNode 的文件系统编辑日志流并将其保存到磁盘外，备份节点还将这些编辑应用到内存中自己的命名空间副本中，从而创建命名空间的备份。
+备份节点的配置方式与检查点节点的配置方式相同。它以 bin/hdfs namenode -backup 启动
+配置项：
+dfs.namenode.backup.address
+dfs.namenode.backup.http-address
+
+
+Import Checkpoint
+如果图像和编辑文件的所有其他副本都丢失，则可以将最新的检查点导入到 NameNode
+配置项：
+创建一个在 dfs.namenode.name.dir 配置变量中指定的空目录;
+在配置变量 dfs.namenode.checkpoint.dir 中指定检查点目录的位置;
+并使用 -importCheckpoint 选项启动 NameNode
+
+
+Balancer
+HDFS数据可能并不总是统一放置在DataNode上。一个常见原因是向现有集群添加了新的数据节点。在放置新块（文件的数据存储为一系列块）时，NameNode 在选择接收这些块的数据节点之前会考虑各种参数
+配置项：
+将块的一个副本与写入块的节点保留在同一节点上的策略
+需要将块的不同副本分布在机架上，以便群集能够承受整个机架丢失的情况
+其中一个副本通常与写入文件的节点放在同一个机架上，以减少跨机架网络 I/O
+将 HDFS 数据均匀分布在集群中的数据节点上
+
+
+Safemode_安全模式
+在启动期间，NameNode 从 fsimage 和编辑日志文件加载文件系统状态。然后，它会等待 DataNode 报告其块，以便尽管集群中已经存在足够多的副本，但它不会过早地开始复制块。在此期间，NameNode将保持安全模式
+NameNode的安全模式本质上是HDFS集群的只读模式
+NameNode 在 DataNode 报告大多数文件系统块可用后自动离开安全模式
+可以使用bin/hdfs dfsadmin -safemode命令显式地将HDFS置于安全模式
+NameNode 首页显示安全模式是打开还是关闭
+配置项：
+JavaDoc for setSafeMode()
+
+Recovery Mode_恢复模式
+恢复模式下启动NameNode：namenode -recover
+可能会导致数据丢失，因此在使用之前应始终备份编辑日志和 fsimage
+
+数据节点热插拔驱动器
+
+服务级别授权
+
+
+
+HDFS Observer NameNode_观察者名称节点
+Active NameNode 负责为所有客户端请求提供服务，而备用 NameNode 只是通过跟踪来自 JournalNode 的编辑日志来保持有关命名空间的最新信息，以及通过接收来自所有 DataNode 的块报告来获取块位置信息。此体系结构的一个缺点是，Active NameNode 可能是单个瓶颈，并且客户端请求过载，尤其是在繁忙的群集中。
+
+来自HDFS Observer NameNode的一致性读取功能通过引入一种称为Observer NameNode的新型NameNode来解决上述问题。与备用名称节点类似，观察者名称节点使自己保持有关命名空间和块位置信息的最新信息。此外，它还具有提供一致读取的能力，如Active NameNode。由于读取请求在典型环境中占多数，因此这有助于对 NameNode 流量进行负载平衡并提高整体吞吐量
+
+要使用 ，应用程序不一定必须进行任何代码更改。启动时，客户端将在对观察者执行任何读取之前自动调用，以便在客户端初始化之前执行的任何写入都将可见。此外，ObserverReadProxyProvider 支持可配置的“自动同步”模式，该模式将在某个可配置的时间间隔自动执行，以防止客户端看到比时间限制更过时的数据。这会产生一些开销，因为每次刷新都需要活动名称节点的 RPC，因此默认情况下处于禁用状态
+
+hdfs权限
+从Hadoop 0.22开始，Hadoop支持两种不同的操作模式来确定用户的身份，由hadoop.security.authentication属性指定：simple(任意模式)、kerberos
+每个文件或目录操作都将完整路径名传递给 NameNode，并且权限检查将沿每个操作的路径应用。客户端框架会将用户身份与与 NameNode 的连接隐式关联，从而减少对现有客户端 API 进行更改的需要。
+如果权限检查失败，所有使用 path 参数的方法都将引发 AccessControlException。
+
+hdfs超级用户
+
+hdfs有磁盘平衡器 Diskbalancer
+	磁盘上可能存在数据分布不均的情况，改命令可以使hdfs的一个块移动到另外一个磁盘上
+
+hdfs可以额外接入数据 类型为Provided，数据搜索时可以使用hdfs相关引擎	
+
+hdfs提供自定义shuffle和自定义sort
+	默认的shuffle类为 org.apache.hadoop.mapred.ShuffleHandler、org.apache.hadoop.mapreduce.task.reduce.Shuffle
+	默认的sort类为org.apache.hadoop.mapred.MapTask$MapOutputBuffer、org.apache.hadoop.mapreduce.task.reduce.Shuffle
+	
+	除了在为shuffle提供服务的NodeManager中运行的辅助服务（默认为ShuffleHandler）之外，所有可插拔组件都在job tasks中运行
+	可通过配置yarn-site来添加指定自定义jar包
+	
+MapReduce的多版本性
+	可以在HDFS中放置多个版本的MapReduce，并配置mapred-site.xml来指定作业默认使用哪个版本
+	MapReduce版本必须与集群中节点上运行的ShuffleHandler版本兼容。如果不兼容，则必须将新的 ShuffleHandler代码部署到集群中的所有节点，并且必须重新启动 NodeManager 以获取新的 ShuffleHandler 代码
+
+MapReduce可以与yarn共享缓存 
+	缓存包括job提交时所使用的资源 可在配置文件中配置
+	
+	
+================================YARN================================
+
+YARN 的基本思想是将资源管理和作业调度/监控的功能拆分为单独的守护进程。
+有一个全局的 ResourceManager (RM) 和每个应用程序的 ApplicationMaster (AM)。应用程序可以是单个作业，也可以是作业的 DAG
+ResourceManager 和 NodeManager 构成了数据计算框架。 
+ResourceManager是系统中所有应用程序的协调者。 NodeManager是每台机器的框架代理，负责容器、监视其资源使用情况（CPU、内存、磁盘、网络）并将其报告给 ResourceManager/Scheduler。
+ApplicationMaster 是与 ResourceManager 协商资源并与 NodeManager 一起执行和监视任务
+
+ResourceManager 包含 Scheduler 和 ApplicationsManager。
+ApplicationMaster 并提供在失败时重新启动服务，其负责与 Scheduler 协商适当的资源调度器，跟踪其状态并监控进度
+
+相关命令
+	yarn [SHELL_OPTIONS] COMMAND [GENERIC_OPTIONS] [SUB_COMMAND] [COMMAND_OPTIONS]
+	etc/hadoop/hadoop-env.sh  存储所有 Hadoop shell 命令使用的全局设置
+	etc/hadoop/yarn-env.sh  存储所有 YARN shell 命令使用
+	etc/hadoop/hadoop-user-functions.sh  允许高级用户覆盖某些 shell 功能
+	~/.hadooprc  存储单个用户的个人环境
+	
+调度器：
+	容量调度--Capacity Scheduler
+		抽象出一个队列
+		分层队列 以确保在允许其他队列使用空闲资源之前在组织的子队列之间共享资源
+		在ResourceManager配置为使用CapacityScheduler 
+			yarn.resourcemanager.scheduler.class---org.apache.hadoop.yarn.server.resourcemanager.scheduler.capacity.CapacityScheduler
+		配置文件 etc/hadoop/capacity-scheduler.xml
+		
+	公平调度--Fair Scheduler
+		仅根据内存做出调度公平决策
+
+
+ResourceManager 重启：
+	不保留现有运行任务：直接重启，现有运行任务则丢弃
+		在 RM 停机期间，NodeManager 和客户端将继续轮询 RM，直到 RM 出现。当 RM 启动时，它将通过心跳向所有与之通信的 NodeManager 和 ApplicationMaster 发送重新同步命令。
+		NM 将杀死所有其管理的容器并重新向 RM 注册。
+		
+	保留现有任务：通过结合来自 NodeManager 的容器状态和重启时来自 ApplicationMaster 的容器请求来重建 RM 的运行状态。与非工作保留 RM 重新启动的主要区别在于，RM 重新启动后，先前运行的应用程序不会被终止，因此应用程序不会因为 RM 中断而丢失其工作。
+		RM利用所有NM发送来的容器状态来恢复其运行状态。当 NM 与重新启动的 RM 重新同步时，它不会杀死容器。它继续管理容器，并在重新注册时将容器状态发送到 RM。 RM通过吸收这些容器的信息来重建容器实例和相关应用程序的调度状态。同时，AM需要将未完成的资源请求重新发送给RM，因为RM关闭时可能会丢失未完成的请求。使用 AMRMClient 库与 RM 通信的应用程序编写者无需担心 AM 在重新同步时向 RM 重新发送资源请求的部分，因为它是由库本身自动处理的。
+		
+ResourceManager HA
+	防止 RM脑裂
+	客户端、ApplicationMaster (AM) 和 NodeManager (NM) 尝试以循环方式连接到 RM，直到它们连接到 Active RM。
+	
+节点标签 node label
+	节点标签是一种对具有相似特征的节点进行分组的方法，应用程序可以指定在哪里运行
+	
+节点属性 Node Attributes
+	
+YARN Applications
+
+NodeManager 
+	负责启动和管理节点上的容器。容器执行AppMaster指定的任务。
+	健康度检查
+		对该节点进行扫描，若不健康，则通过心跳方式发送给RM，RM则不会对该节点分发任务，直到NM通过心跳发送健康状态
+			磁盘检查 包括权限和可用磁盘空间
+	重启：在不丢失节点上运行的活动容器的情况下重新启动。
+		NM 在处理容器管理请求时将任何必要的状态存储到本地状态存储中。重启后再按照状态来恢复。
+
+YARN 集群
+	支持 多个小yarn集群 组合为大集群
+
+YARN 共享缓存：YARN Shared Cache
+	将共享应用程序资源上传到 HDFS 并进行管理的工具
+	有以下4个组件
+		共享缓存客户端。用户与此交互。
+		充当缓存的 HDFS 目录。
+		共享缓存管理器（又名 SCM）。
+		本地化服务和上传器。
+			
